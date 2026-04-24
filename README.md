@@ -218,6 +218,21 @@ The `Caddyfile` is checked into the repo but contains **no hardcoded hostnames**
 
 These are set in `.env` which is gitignored. `.env.example` shows the expected format.
 
+### TLS Strategy
+
+By default, Caddy uses `tls internal`. That means Caddy acts as its own private certificate authority and issues certs for `*.${TS_DOMAIN}` itself.
+
+- This is **not** using Tailscale-issued certificates.
+- It works well for a private tailnet because traffic is still fully encrypted.
+- Your devices will only trust those certs after you import Caddy's root CA from `/mnt/docker/caddy/data/caddy/pki/authorities/local/root.crt`.
+
+If you later want browser-trusted certs without importing a custom CA, there are two upgrade paths:
+
+- Use a real public domain and switch Caddy to ACME / Let's Encrypt
+- Generate Tailscale certs on the host with `tailscale cert` and mount them into Caddy manually
+
+This repo keeps the default on `tls internal` because it is simple, reproducible, and does not couple the Caddy container to host-level Tailscale certificate management.
+
 ---
 
 ## Environment Variables

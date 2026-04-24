@@ -65,6 +65,13 @@ services:
       - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
       - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
       - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.${TS_DOMAIN}
+      # Caddy talks to Nextcloud from the Docker bridge network. Trust that RFC1918
+      # proxy range and pin the public-facing URL values so links and redirects are
+      # always generated correctly over HTTPS.
+      - TRUSTED_PROXIES=172.16.0.0/12
+      - OVERWRITEHOST=nextcloud.${TS_DOMAIN}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITECLIURL=https://nextcloud.${TS_DOMAIN}
     volumes:
       - /mnt/docker/nextcloud:/var/www/html
     networks:
