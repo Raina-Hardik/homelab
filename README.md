@@ -2,7 +2,7 @@
 
 A quick, reproducible setup for my personal homelab. Not an exhaustive list — just the things that make life fun and easy to have.
 
-Each stack lives in its own Docker Compose file. Custom images (where needed) use a `Dockerfile.service` in the same directory. Everything is bootstrapped and operated via a `justfile`.
+Each stack lives in its own Docker Compose file. Everything is bootstrapped and operated via a `justfile`.
 
 > **Not managed here:** Tailscale runs directly on the host. It provides the VPN tunnel, SSH access, and LAN routing. Docker never touches it.
 
@@ -197,8 +197,8 @@ git clone <repo> homelab && cd homelab
 cp .env.example .env
 $EDITOR .env
 
-# 3. Create the Docker network (once)
-docker network create homelab
+# 3. One-time setup (network + host directories)
+just init
 
 # 4. Bring up everything (excludes extras)
 just up
@@ -221,6 +221,64 @@ just up-extras
 just down
 just down-core   # etc.
 ```
+
+---
+
+## Startup & Config Flow
+
+### Recommended First Boot Order
+
+If you want the least surprising startup path, use this order:
+
+```bash
+just init
+just pull
+just up
+```
+
+Then finish the parts that intentionally require UI-driven setup:
+
+1. AdGuard: visit `http://<host>:3000` and complete the first-run wizard.
+2. Beszel: open the self-hosted hub UI and fetch either a system `KEY` from `Add System` or a universal token from `/settings/tokens`.
+3. Authentik: create providers, applications, and policies in the UI.
+4. Uptime Kuma: add monitors in the UI.
+5. GitHub runner: only start it after you have a fresh runner registration token from GitHub.
+
+For Beszel specifically, the hub can boot before the agent is fully configured. A practical flow is:
+
+```bash
+just init
+just pull
+just up
+# fetch BESZEL_KEY from the self-hosted Beszel UI
+just up-obs
+```
+
+The second `just up-obs` recreates `beszel-agent` with the updated environment.
+
+### Restart vs Recreate vs Rebuild
+
+This repo does not currently build any local images. All active services use published upstream images, and none of the compose files define `build:` entries.
+
+- **Rebuild:** not required for normal operation, because nothing is built locally.
+- **Recreate:** required when you change `.env`, ports, commands, volumes, or any compose-level environment variables. Running `just up-<stack>` again is the normal way to apply those changes.
+- **Restart only:** sufficient when the container can reread existing on-disk application config. `just restart <service>` only restarts the current container; it does **not** apply changed `.env` values.
+
+Rule of thumb:
+
+- If you changed `.env`, rerun `just up-<stack>` for the affected stack.
+- If you changed only settings inside the application's UI, container recreation is usually not needed.
+- If you changed a bootstrap credential for a stateful app after its data directory already exists, the new env value may not retroactively rewrite the app's internal state.
+
+### UI-Issued Values and External Tokens
+
+Some required values are not made up manually. They come from a self-hosted UI or an external control plane and then get copied into `.env` before recreating the relevant stack.
+
+| Service | Value | Where it comes from | Apply by |
+|---------|-------|---------------------|----------|
+| Beszel agent | `BESZEL_KEY` | Beszel Hub UI → `Add System` | `just up-obs` |
+| Beszel agent | universal token | Beszel Hub UI → `/settings/tokens` | Not wired into this repo yet |
+| GitHub runner | `GITHUB_RUNNER_TOKEN` | GitHub repo → Settings → Actions → Runners | `just up-runner` |
 
 ---
 
@@ -264,15 +322,60 @@ See `.env.example` for the full list. Key categories:
 
 | Category | Variables |
 |----------|-----------|
-| System | `TZ`, `PUID`, `PGID` |
-| Domains | `TS_DOMAIN`, `LOCAL_DOMAIN` |
+| System | `TZ`, `PUID`, `PGID`, `HOST_MOUNT_ROOT`, `ADGUARD_DNS_PORT_TCP`, `ADGUARD_DNS_PORT_UDP` |
+| Domains | `TS_DOMAIN`, `LOCAL_DOMAIN`, `ACME_EMAIL` |
 | VPN | `VPN_SERVICE_PROVIDER`, `VPN_TYPE`, `OPENVPN_USER`, `OPENVPN_PASSWORD` |
-| Immich | `DB_PASSWORD`, `REDIS_PASSWORD` |
-| Nextcloud | `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_ADMIN_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` |
-| Authentik | `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_POSTGRES_PASSWORD` |
-| GitHub Runner | `GITHUB_RUNNER_TOKEN`, `GITHUB_RUNNER_REPO` |
+| Beszel | `BESZEL_KEY` |
+| Immich | `IMMICH_DB_PASSWORD` |
+| Nextcloud | `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_ADMIN_PASSWORD`, `NEXTCLOUD_MYSQL_ROOT_PASSWORD`, `NEXTCLOUD_MYSQL_PASSWORD`, `NEXTCLOUD_MYSQL_DATABASE`, `NEXTCLOUD_MYSQL_USER` |
+| Authentik | `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_POSTGRES_PASSWORD`, `AUTHENTIK_POSTGRES_USER`, `AUTHENTIK_POSTGRES_DB` |
+| GitHub Runner | `GITHUB_RUNNER_TOKEN`, `GITHUB_RUNNER_REPO`, `GITHUB_RUNNER_NAME` |
+| Extras | `VAULTWARDEN_ADMIN_TOKEN`, `N8N_BASIC_AUTH_USER`, `N8N_BASIC_AUTH_PASSWORD`, `N8N_ENCRYPTION_KEY` |
 
 `just up-dev` starts Gitea only. Start the GitHub runner explicitly with `just up-runner` after setting runner credentials in `.env`.
+
+`PUID` and `PGID` still exist in `.env.example` for clarity, but `just` exports the runtime UID/GID of whoever invokes it, so the effective values come from the current shell user.
+
+### What Needs Recreate vs In-App Reconfiguration
+
+| Stack | Values / setup | What changes need container recreation | What is UI-only after boot |
+|-------|----------------|----------------------------------------|----------------------------|
+| Core | `TZ`, `HOST_MOUNT_ROOT`, `ADGUARD_DNS_PORT_TCP`, `ADGUARD_DNS_PORT_UDP`, `TS_DOMAIN`, `LOCAL_DOMAIN`, `ACME_EMAIL` | Any `.env` change here should be applied with `just up-core` because ports, Caddy env, and bind mounts are container-level | AdGuard first-run setup on port `3000` writes app config to disk |
+| Media | ProtonVPN creds and provider settings, `TZ`, bind root | Use `just up-media` after env changes | Sonarr, Radarr, Prowlarr, qBittorrent, and Jellyfin are mainly configured in their UIs |
+| Cloud | Immich DB password, Nextcloud DB/admin/bootstrap values, domain-derived overwrite settings | Use `just up-cloud` after env changes | Immich libraries and most Nextcloud app settings are in-app after boot |
+| Dev | `TS_DOMAIN` for Gitea URLs, runner repo/token/name | Use `just up-dev` for Gitea env changes and `just up-runner` for runner env changes | Gitea repos/orgs/users are UI-managed |
+| Obs | `BESZEL_KEY` and future Beszel agent auth env, bind root | Use `just up-obs` after changing Beszel agent auth | Uptime Kuma monitors and Beszel system definitions come from the UI |
+| Auth | `AUTHENTIK_SECRET_KEY`, Postgres credentials, bind root | Use `just up-auth` after env changes | Authentik providers, applications, flows, and policies are UI-managed |
+| Extras | Vaultwarden admin token, n8n auth and encryption key | Use `just up-extras` after env changes | Vaultwarden users/orgs and n8n workflows are UI-managed |
+
+### Bootstrap-Sensitive Values
+
+These values deserve extra care because changing them later may not fully rewrite already-initialized application state:
+
+- `NEXTCLOUD_ADMIN_USER` and `NEXTCLOUD_ADMIN_PASSWORD` are intended for first bootstrap of the mounted Nextcloud data directory.
+- `NEXTCLOUD_MYSQL_*` values are database bootstrap inputs; changing them later usually means coordinating MariaDB and Nextcloud state, not only recreating containers.
+- `AUTHENTIK_POSTGRES_*` values work the same way for Authentik's Postgres database.
+- `AUTHENTIK_SECRET_KEY` should be treated as persistent instance identity material, not something to rotate casually.
+- `N8N_ENCRYPTION_KEY` protects stored credentials at rest; changing it later can make existing encrypted credentials unreadable.
+- `GITHUB_RUNNER_TOKEN` is a short-lived registration token from GitHub; use a fresh one when registering or re-registering the runner.
+
+### Beszel Notes
+
+This repo currently wires the Beszel agent as:
+
+```text
+KEY=${BESZEL_KEY}
+```
+
+That means the operational flow today is:
+
+1. Start the hub with `just up` or `just up-obs`.
+2. Open the self-hosted Beszel UI.
+3. Fetch the agent public key from `Add System`.
+4. Paste it into `.env` as `BESZEL_KEY`.
+5. Rerun `just up-obs` to recreate `beszel-agent` with the new value.
+
+Beszel also supports a universal token flow from `/settings/tokens`, but that is not yet wired into `obs/docker-compose.yml` in this repo.
 
 ## Healthchecks
 
