@@ -14,10 +14,13 @@
 
 set dotenv-load := true
 
+set shell := ["bash", "-c"]
+set windows-shell := ["pwsh.exe", "-NoProfile", "-Command"]
+
 # UID/GID are taken from whoever runs `just` — overrides any PUID/PGID in .env.
 # This ensures host-mounted directories are always owned by the right user.
-export PUID := `id -u`
-export PGID := `id -g`
+export PUID := 1000
+export PGID := 1000
 host_mount_root := env('HOST_MOUNT_ROOT', './mnt/docker')
 
 # ── Default ───────────────────────────────────────────────────────────────────
