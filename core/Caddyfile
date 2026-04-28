@@ -15,6 +15,7 @@
 
 	tailscale {
 		auth_key {$TS_AUTHKEY}
+		webui true
 	}
 }
 
