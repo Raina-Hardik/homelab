@@ -4,6 +4,9 @@ services:
     restart: unless-stopped
     ports:
       - 1411:1411
+    environment:
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - APP_URL=https://${TS_DOMAIN}
     volumes:
       - ${HOST_MOUNT_ROOT:-/mnt/docker}/pocketid:/app/data
     # Optional healthcheck
