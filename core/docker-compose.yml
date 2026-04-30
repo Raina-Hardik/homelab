@@ -40,6 +40,7 @@ services:
       - TZ=${TZ}
       - TS_DOMAIN=${TS_DOMAIN}
       - TS_AUTHKEY=${TS_AUTHKEY}
+      - TSNET_FORCE_LOGIN=1
       - LOCAL_DOMAIN=${LOCAL_DOMAIN}
       - ACME_EMAIL=${ACME_EMAIL}
     depends_on:
