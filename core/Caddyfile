@@ -127,14 +127,6 @@ uptime.{$TS_DOMAIN} {
 	import common_proxy uptime-kuma:3001
 }
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
-
-auth.{$TS_DOMAIN} {
-	bind tailscale/auth
-	import common
-	import common_proxy authentik-server:9000
-}
-
 # ── Extras (uncomment when extras stack is running) ───────────────────────────
 
 # vault.{$TS_DOMAIN} {
