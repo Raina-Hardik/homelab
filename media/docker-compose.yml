@@ -22,7 +22,8 @@ services:
     # Port 8080 is the qBittorrent Web UI — exposed here since qBittorrent shares
     # this container's network. Remove the host-port once Caddy is routing to it.
     ports:
-      - "8080:8080"
+      - "8080:8080"  # qBittorrent
+      - "9696:9696"  # Prowlarr
     healthcheck:
       test: [ "CMD-SHELL", "ps -ef | grep -q '[g]luetun'" ]
       interval: 30s
@@ -129,6 +130,10 @@ services:
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
+    network_mode: "service:gluetun"  # route through VPN
+    depends_on:
+      gluetun:
+        condition: service_healthy
     restart: unless-stopped
     environment:
       - PUID=${PUID}
@@ -137,13 +142,11 @@ services:
     volumes:
       - ${HOST_MOUNT_ROOT:-/mnt/docker}/prowlarr:/config
     healthcheck:
-      test: [ "CMD-SHELL", "ps -ef | grep -q '[P]rowlarr'" ]
+      test: ["CMD-SHELL", "ps -ef | grep -q '[P]rowlarr'"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
-    networks:
-      - homelab
 
 networks:
   homelab:
